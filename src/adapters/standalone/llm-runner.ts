@@ -49,6 +49,8 @@ export interface StandaloneLLMConfig {
   maxTokens?: number;
   /** Request timeout in milliseconds (default: 120_000). */
   timeoutMs?: number;
+  /** Custom headers to include in every request (e.g. X-Enterprise-Id for IOA gateways). */
+  headers?: Record<string, string>;
 }
 
 // ============================
@@ -190,11 +192,14 @@ export class StandaloneLLMRunner implements LLMRunner {
 
     // Create OpenAI-compatible provider via AI SDK
     // Use "compatible" mode to call /chat/completions (not Responses API),
-    // which works with all OpenAI-compatible backends (DeepSeek, Qwen, etc.)
+    // which works with all OpenAI-compatible backends (DeepSeek, Qwen, CodeBuddy/IOA, etc.)
     const provider = createOpenAI({
       baseURL: this.config.baseUrl,
       apiKey: this.config.apiKey,
       compatibility: "compatible",
+      ...(this.config.headers && Object.keys(this.config.headers).length > 0
+        ? { headers: this.config.headers }
+        : {}),
     });
 
     // Select tools based on mode

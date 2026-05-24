@@ -86,12 +86,19 @@ export function loadGatewayConfig(overrides?: Partial<GatewayConfig>): GatewayCo
 
   // LLM config
   const llmConfig = obj(fileConfig, "llm");
+  const resolvedApiKey = resolveApiKey(
+    env("TDAI_LLM_API_KEY"),
+    env("TDAI_LLM_API_KEY_FILE"),
+    str(llmConfig, "apiKey"),
+    str(llmConfig, "apiKeyFile"),
+  );
   const llm: StandaloneLLMConfig = {
     baseUrl: env("TDAI_LLM_BASE_URL") ?? str(llmConfig, "baseUrl") ?? "https://api.openai.com/v1",
-    apiKey: env("TDAI_LLM_API_KEY") ?? str(llmConfig, "apiKey") ?? "",
+    apiKey: resolvedApiKey,
     model: env("TDAI_LLM_MODEL") ?? str(llmConfig, "model") ?? "gpt-4o",
     maxTokens: envInt("TDAI_LLM_MAX_TOKENS") ?? num(llmConfig, "maxTokens") ?? 4096,
     timeoutMs: envInt("TDAI_LLM_TIMEOUT_MS") ?? num(llmConfig, "timeoutMs") ?? 120_000,
+    headers: parseHeaders(env("TDAI_LLM_HEADERS"), obj(llmConfig, "headers")),
   };
 
   // Memory config (reuse the plugin's parseConfig for full compatibility)
@@ -197,6 +204,148 @@ function str(src: Record<string, unknown>, key: string): string | undefined {
 function num(src: Record<string, unknown>, key: string): number | undefined {
   const v = src[key];
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+/**
+ * Parse custom headers from environment variable (JSON string) or config file object.
+ *
+ * Env var format: JSON object string, e.g. '{"X-Enterprise-Id":"abc","X-Domain":"example.com"}'
+ * Config file format: plain object under `llm.headers`
+ *
+ * Env var takes precedence (merged on top of file config).
+ */
+function parseHeaders(
+  envValue: string | undefined,
+  fileHeaders: Record<string, unknown>,
+): Record<string, string> | undefined {
+  const result: Record<string, string> = {};
+
+  // File config headers
+  for (const [k, v] of Object.entries(fileHeaders)) {
+    if (typeof v === "string" && v.trim()) {
+      result[k] = v.trim();
+    }
+  }
+
+  // Env var headers (override file)
+  if (envValue) {
+    try {
+      const parsed = JSON.parse(envValue);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof v === "string" && v.trim()) {
+            result[k] = v.trim();
+          }
+        }
+      }
+    } catch {
+      // Invalid JSON — ignore
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Resolve the API key from multiple sources (in priority order):
+ * 1. TDAI_LLM_API_KEY env var (direct value)
+ * 2. TDAI_LLM_API_KEY_FILE env var (path to a file containing the key)
+ * 3. Config file `apiKey` field
+ * 4. Config file `apiKeyFile` field
+ *
+ * File-based resolution supports two formats:
+ * - Plain text file: entire content is the API key
+ * - JSON file with `.info` extension (CodeBuddy auth format):
+ *   reads `auth.accessToken` from the JSON structure
+ *
+ * The CodeBuddy auth file is typically at:
+ *   Windows: %LOCALAPPDATA%/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info
+ *   macOS:   ~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info
+ *   Linux:   ~/.local/share/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info
+ */
+function resolveApiKey(
+  envKey: string | undefined,
+  envKeyFile: string | undefined,
+  configKey: string | undefined,
+  configKeyFile: string | undefined,
+): string {
+  // 1. Direct env var
+  if (envKey) return envKey;
+
+  // 2. Env var pointing to file
+  if (envKeyFile) {
+    const token = readApiKeyFromFile(envKeyFile);
+    if (token) return token;
+  }
+
+  // 3. Config file direct value
+  if (configKey) return configKey;
+
+  // 4. Config file pointing to file
+  if (configKeyFile) {
+    const token = readApiKeyFromFile(configKeyFile);
+    if (token) return token;
+  }
+
+  // 5. Auto-detect CodeBuddy auth file
+  const codebuddyToken = tryReadCodeBuddyToken();
+  if (codebuddyToken) return codebuddyToken;
+
+  return "";
+}
+
+/**
+ * Read an API key from a file. Supports:
+ * - `.info` files (CodeBuddy JSON format): reads auth.accessToken
+ * - Plain text files: reads entire content trimmed
+ */
+function readApiKeyFromFile(filePath: string): string | undefined {
+  try {
+    const resolved = filePath.startsWith("~/")
+      ? path.join(getEnv("HOME") ?? getEnv("USERPROFILE") ?? "/tmp", filePath.slice(2))
+      : filePath;
+    if (!fs.existsSync(resolved)) return undefined;
+    const content = fs.readFileSync(resolved, "utf-8").trim();
+
+    // CodeBuddy .info format: JSON with auth.accessToken
+    if (resolved.endsWith(".info")) {
+      try {
+        const data = JSON.parse(content);
+        if (data?.auth?.accessToken) return data.auth.accessToken;
+      } catch {
+        // Not valid JSON — treat as plain text
+      }
+    }
+
+    return content || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Attempt to auto-detect and read CodeBuddy's auth token from its
+ * well-known storage location.
+ */
+function tryReadCodeBuddyToken(): string | undefined {
+  const home = getEnv("HOME") ?? getEnv("USERPROFILE");
+  if (!home) return undefined;
+
+  let authDir: string;
+  switch (process.platform) {
+    case "win32":
+      authDir = path.join(home, "AppData", "Local", "CodeBuddyExtension", "Data", "Public", "auth");
+      break;
+    case "darwin":
+      authDir = path.join(home, "Library", "Application Support", "CodeBuddyExtension", "Data", "Public", "auth");
+      break;
+    default:
+      authDir = path.join(home, ".local", "share", "CodeBuddyExtension", "Data", "Public", "auth");
+      break;
+  }
+
+  const authFile = path.join(authDir, "Tencent-Cloud.coding-copilot.info");
+  return readApiKeyFromFile(authFile);
 }
 
 /**
