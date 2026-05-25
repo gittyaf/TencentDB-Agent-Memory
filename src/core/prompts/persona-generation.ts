@@ -6,6 +6,8 @@
  * userPrompt (data). Tool names aligned to OpenClaw actual API (write/edit).
  */
 
+import { MATCH_USER_LANGUAGE_DIRECTIVE } from "./shared-directives.js";
+
 export interface PersonaPromptParams {
   mode: "first" | "incremental";
   currentTime: string;
@@ -133,7 +135,8 @@ const PERSONA_SYSTEM_PROMPT = `# 🧬 Persona Architect - Incremental Evolution 
 - ✅ 内容到 Chapter 4 结束（不包含场景导航，工程会自动追加）
 - ✅ 必须严格按照上面的模板格式
 - ✅ 不要添加场景导航（工程会自动追加）
-- ✅ 只操作 persona.md，不要操作其他文件`;
+- ✅ 只操作 persona.md，不要操作其他文件
+${MATCH_USER_LANGUAGE_DIRECTIVE}`;
 
 // ============================
 // User Prompt builder (dynamic data)

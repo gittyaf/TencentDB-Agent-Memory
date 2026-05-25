@@ -18,7 +18,7 @@
 
 import fsPromises from "node:fs/promises";
 import path from "node:path";
-import { generateText, tool, stepCountIs, jsonSchema } from "ai";
+import { streamText, tool, stepCountIs, jsonSchema } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { report } from "../../core/report/reporter.js";
 import type {
@@ -208,7 +208,10 @@ export class StandaloneLLMRunner implements LLMRunner {
       : createReadOnlyTools(workspaceDir, this.logger);
 
     try {
-      const result = await generateText({
+      // Use streamText instead of generateText because some providers
+      // (e.g. Tencent Copilot / copilot.tencent.com) only support streaming
+      // and reject non-streaming requests with "Bad Request" (error 11101).
+      const result = await streamText({
         model: provider.chat(this.model),
         system: params.systemPrompt,
         prompt: params.prompt,
@@ -218,16 +221,18 @@ export class StandaloneLLMRunner implements LLMRunner {
         abortSignal: AbortSignal.timeout(timeoutMs),
       });
 
-      const text = result.text.trim();
+      // Consume the stream and collect the full text
+      const text = (await result.text).trim();
       const totalMs = Date.now() - runStartMs;
 
       this.logger?.debug?.(
-        `${TAG} run() completed: ${totalMs}ms, steps=${result.steps.length}, output=${text.length} chars`,
+        `${TAG} run() completed: ${totalMs}ms, steps=${(await result.steps).length}, output=${text.length} chars`,
       );
 
       // Log tool usage if any
-      if (result.steps.length > 1) {
-        const toolCalls = result.steps.flatMap((s) => s.toolCalls ?? []);
+      const steps = await result.steps;
+      if (steps.length > 1) {
+        const toolCalls = steps.flatMap((s) => s.toolCalls ?? []);
         this.logger?.debug?.(
           `${TAG} Tool calls: ${toolCalls.map((tc) => tc.toolName).join(", ")}`,
         );

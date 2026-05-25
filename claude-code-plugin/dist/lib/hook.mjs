@@ -1,6 +1,6 @@
 import http from "node:http";
 import { appendFile, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { URL } from "node:url";
+import { URL as URL$1 } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -22,7 +22,7 @@ var GatewayClient = class {
 	timeoutMs;
 	logPath;
 	constructor(config) {
-		this.baseUrl = new URL(config.baseUrl);
+		this.baseUrl = new URL$1(config.baseUrl);
 		this.token = config.token;
 		this.timeoutMs = config.timeoutMs ?? 5e3;
 		this.logPath = config.logPath;
@@ -139,19 +139,19 @@ var GatewayClient = class {
 	request(method, path, bodyObj) {
 		return new Promise((resolve, reject) => {
 			const bodyStr = bodyObj ? JSON.stringify(bodyObj) : void 0;
+			const headers = {};
+			if (this.token) headers.Authorization = `Bearer ${this.token}`;
+			if (bodyStr) {
+				headers["Content-Type"] = "application/json";
+				headers["Content-Length"] = Buffer.byteLength(bodyStr).toString();
+			}
 			const opts = {
 				protocol: this.baseUrl.protocol,
 				hostname: this.baseUrl.hostname,
 				port: this.baseUrl.port,
 				method,
 				path,
-				headers: {
-					Authorization: `Bearer ${this.token}`,
-					...bodyStr ? {
-						"Content-Type": "application/json",
-						"Content-Length": Buffer.byteLength(bodyStr).toString()
-					} : {}
-				}
+				headers
 			};
 			const req = http.request(opts, (res) => {
 				const chunks = [];
@@ -322,6 +322,12 @@ var DaemonManager = class {
 		return tokenPath;
 	}
 	async readToken(tokenPath) {
+		if (!tokenPath) return "";
+		try {
+			await stat(tokenPath);
+		} catch {
+			return "";
+		}
 		const st = await stat(tokenPath);
 		if (process.platform !== "win32" && (st.mode & 63) !== 0) throw new Error(`Token file permission too loose: ${tokenPath}`);
 		if (process.platform !== "win32" && typeof process.getuid === "function") {
@@ -357,12 +363,14 @@ var DaemonManager = class {
 	}
 	healthCheck(port, token, timeoutMs = 2e3) {
 		return new Promise((resolve) => {
+			const headers = {};
+			if (token) headers.Authorization = `Bearer ${token}`;
 			const req = http.request({
 				host: "127.0.0.1",
 				port,
 				path: "/health",
 				method: "GET",
-				headers: { Authorization: `Bearer ${token}` }
+				headers
 			}, (res) => resolve(res.statusCode === 200));
 			req.setTimeout(timeoutMs, () => {
 				req.destroy();
@@ -372,18 +380,36 @@ var DaemonManager = class {
 			req.end();
 		});
 	}
+	/**
+	* Probe well-known ports for a gateway that was started externally (e.g.
+	* by CodeBuddy, another Claude session, or manually). If found, write a
+	* state.json so subsequent hooks can reuse it without re-probing.
+	*/
+	async discoverExternalGateway() {
+		for (let port = this.portStart; port <= this.portEnd; port++) if (await this.healthCheck(port, "", 1500)) {
+			const state = {
+				pid: 0,
+				port,
+				ccPid: 0,
+				startedAt: "external",
+				tokenPath: ""
+			};
+			await writeDaemonState(this.dataDir, state);
+			return state;
+		}
+		return null;
+	}
 	async ensureRunning(ccPid) {
 		const reuseExisting = async () => {
 			const existing = await readDaemonState(this.dataDir);
 			if (!existing) return null;
-			if (existing.ccPid !== ccPid) return null;
+			if (existing.ccPid !== 0 && existing.ccPid !== ccPid) return null;
 			let token = "";
 			try {
 				token = await this.readToken(existing.tokenPath);
 			} catch {
 				return null;
 			}
-			if (!token) return null;
 			if (await this.healthCheck(existing.port, token)) return existing;
 			const deadline = Date.now() + 1e4;
 			while (Date.now() < deadline) {
@@ -394,6 +420,8 @@ var DaemonManager = class {
 		};
 		const reused = await reuseExisting();
 		if (reused) return reused;
+		const discovered = await this.discoverExternalGateway();
+		if (discovered) return discovered;
 		const lock = await this.acquireSpawnLock();
 		if (!lock) {
 			const deadline = Date.now() + 35e3;
@@ -407,6 +435,8 @@ var DaemonManager = class {
 		try {
 			const r = await reuseExisting();
 			if (r) return r;
+			const d = await this.discoverExternalGateway();
+			if (d) return d;
 			return await this.spawn(ccPid);
 		} finally {
 			await lock.release();
@@ -475,10 +505,12 @@ var DaemonManager = class {
 		try {
 			logFd = openSync(logPath, "a");
 		} catch {}
+		const isWindows = process.platform === "win32";
 		const child = spawn(command, args, {
 			env: childEnv,
 			cwd: this.dataDir,
 			detached: true,
+			shell: isWindows,
 			stdio: [
 				"ignore",
 				logFd,
@@ -796,11 +828,15 @@ async function main() {
 		const stdin = await readStdin();
 		const mgr = new DaemonManager({ dataDir });
 		let state = await readDaemonState(dataDir);
-		if (event === "session-start" && !state) try {
+		if (!state && event === "session-start") try {
 			state = await mgr.ensureRunning(process.ppid);
 		} catch (err) {
 			await safeLog(logPath, `session-start: spawn failed: ${err.message}`);
 		}
+		if (!state) try {
+			state = await mgr.discoverExternalGateway();
+			if (state) await safeLog(logPath, `${event}: discovered external gateway on port ${state.port}`);
+		} catch {}
 		if (!state) {
 			await safeLog(logPath, `${event}: no daemon, skipped`);
 			return;
@@ -838,6 +874,6 @@ async function safeLog(path, msg) {
 		await appendFile(path, `[${(/* @__PURE__ */ new Date()).toISOString()}] ${msg}\n`);
 	} catch {}
 }
-if (import.meta.url === `file://${process.argv[1]}`) main().catch(() => process.exit(0));
+if (import.meta.url === `file://${process.argv[1]}` || import.meta.url === new URL(`file:///${process.argv[1].replace(/\\/g, "/")}`).href) main().catch(() => process.exit(0));
 //#endregion
 export { handleHook };

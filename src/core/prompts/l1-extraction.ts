@@ -7,6 +7,7 @@
  */
 
 import type { ConversationMessage } from "../conversation/l0-recorder.js";
+import { MATCH_USER_LANGUAGE_DIRECTIVE } from "./shared-directives.js";
 
 // ============================
 // System Prompt
@@ -20,7 +21,7 @@ export const EXTRACT_MEMORIES_SYSTEM_PROMPT = `你是专业的"情境切分与�
 - 继承：无明显切换，沿用上一个情境。
 - 切换条件：用户发出明确指令（如"换话题"）、意图转变、或提出独立新目标。
 - 一段对话可能只有一个情境，也可能有多个情境（话题多次切换时）。
-- 命名规则："我（AI）在和xxx（用户身份）做xxx（目标活动）"（中文，30-50字，单句，全局唯一）。
+- 命名规则："我（AI）在和xxx（用户身份）做xxx（目标活动）"（使用与对话相同的语言，30-50字/words，单句，全局唯一）。
 
 ---
 
@@ -95,7 +96,8 @@ metadata 字段说明：
   }
 ]
 
-请严格按上述 JSON 数组格式输出，不要输出任何额外的 Markdown 代码块修饰符（如 \`\`\`json）或解释文本。`;
+请严格按上述 JSON 数组格式输出，不要输出任何额外的 Markdown 代码块修饰符（如 \`\`\`json）或解释文本。
+${MATCH_USER_LANGUAGE_DIRECTIVE}`;
 
 // ============================
 // Prompt Builder

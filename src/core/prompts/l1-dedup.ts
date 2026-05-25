@@ -7,6 +7,7 @@
  */
 
 import type { MemoryRecord, ExtractedMemory } from "../record/l1-writer.js";
+import { MATCH_USER_LANGUAGE_DIRECTIVE } from "./shared-directives.js";
 
 // ============================
 // System Prompt
@@ -64,7 +65,8 @@ export const CONFLICT_DETECTION_SYSTEM_PROMPT = `你是记忆冲突检测器。�
 - merged_content：merge/update 时的最终记忆文本。store/skip 时省略。
 - merged_type：merge/update 后记忆应归属的 type。根据合并后内容本质判断。
 - merged_priority：merge/update 后的新优先级（0-100 整数，merge/update 时必填）。合并后信息更完整、更确定，通常应**酌情提升** priority（例如两条 priority 70 的记忆合并后可提升到 80）。参考标准：80-100（核心特质/重要事件），60-79（一般偏好/普通活动），<60（次要信息）。
-- merged_timestamps：合并后的时间戳数组。收集新记忆 + 所有被合并旧记忆的时间戳，去重排序。`;
+- merged_timestamps：合并后的时间戳数组。收集新记忆 + 所有被合并旧记忆的时间戳，去重排序。
+${MATCH_USER_LANGUAGE_DIRECTIVE}`;
 
 // ============================
 // Prompt Builder

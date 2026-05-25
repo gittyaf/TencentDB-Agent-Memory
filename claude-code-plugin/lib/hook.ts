@@ -440,11 +440,25 @@ async function main(): Promise<void> {
     const mgr = new DaemonManager({ dataDir });
     let state = await readDaemonState(dataDir);
 
-    if (event === "session-start" && !state) {
+    if (!state && event === "session-start") {
       try {
         state = await mgr.ensureRunning(process.ppid);
       } catch (err) {
         await safeLog(logPath, `session-start: spawn failed: ${(err as Error).message}`);
+      }
+    }
+
+    // For non-session-start events, if no state.json exists (e.g. session-start
+    // failed, or an external gateway was started after our session began), try
+    // to discover an already-running gateway on well-known ports.
+    if (!state) {
+      try {
+        state = await mgr.discoverExternalGateway();
+        if (state) {
+          await safeLog(logPath, `${event}: discovered external gateway on port ${state.port}`);
+        }
+      } catch {
+        // discovery failed silently — fall through to "no daemon"
       }
     }
 
@@ -489,7 +503,12 @@ async function safeLog(path: string, msg: string): Promise<void> {
   }
 }
 
-const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+const isMainModule =
+  import.meta.url === `file://${process.argv[1]}` ||
+  // On Windows, import.meta.url uses file:///C:/... (triple slash) but
+  // process.argv[1] is C:/... so file:// + argv[1] = file://C:/... (double
+  // slash). Use pathToFileURL for a reliable cross-platform comparison.
+  import.meta.url === new URL(`file:///${process.argv[1].replace(/\\/g, "/")}`).href;
 if (isMainModule) {
   main().catch(() => process.exit(0));
 }

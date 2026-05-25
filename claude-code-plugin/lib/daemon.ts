@@ -79,6 +79,14 @@ export class DaemonManager {
   }
 
   async readToken(tokenPath: string): Promise<string> {
+    // External gateways (discovered, not spawned by us) have no token file.
+    // Return empty string so the GatewayClient omits the Authorization header.
+    if (!tokenPath) return "";
+    try {
+      await stat(tokenPath); // will throw if file doesn't exist
+    } catch {
+      return "";
+    }
     const st = await stat(tokenPath);
     // Windows' Node fs reports mode bits that don't map to POSIX rwx, so
     // the 0o077 check would always fire and block Windows users entirely.
@@ -137,13 +145,15 @@ export class DaemonManager {
 
   private healthCheck(port: number, token: string, timeoutMs = 2000): Promise<boolean> {
     return new Promise((resolve) => {
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
       const req = http.request(
         {
           host: "127.0.0.1",
           port,
           path: "/health",
           method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
         },
         (res) => resolve(res.statusCode === 200),
       );
@@ -156,18 +166,40 @@ export class DaemonManager {
     });
   }
 
+  /**
+   * Probe well-known ports for a gateway that was started externally (e.g.
+   * by CodeBuddy, another Claude session, or manually). If found, write a
+   * state.json so subsequent hooks can reuse it without re-probing.
+   */
+  async discoverExternalGateway(): Promise<DaemonState | null> {
+    for (let port = this.portStart; port <= this.portEnd; port++) {
+      if (await this.healthCheck(port, "", 1500)) {
+        const state: DaemonState = {
+          pid: 0, // unknown — external process
+          port,
+          ccPid: 0, // not bound to a specific cc session
+          startedAt: "external",
+          tokenPath: "", // no auth token for externally-managed gateways
+        };
+        await writeDaemonState(this.dataDir, state);
+        return state;
+      }
+    }
+    return null;
+  }
+
   async ensureRunning(ccPid: number): Promise<DaemonState> {
     const reuseExisting = async (): Promise<DaemonState | null> => {
       const existing = await readDaemonState(this.dataDir);
       if (!existing) return null;
-      if (existing.ccPid !== ccPid) return null;
+      // External gateways (ccPid === 0) can be reused by any cc session.
+      if (existing.ccPid !== 0 && existing.ccPid !== ccPid) return null;
       let token = "";
       try {
         token = await this.readToken(existing.tokenPath);
       } catch {
         return null;
       }
-      if (!token) return null;
       if (await this.healthCheck(existing.port, token)) return existing;
       // Daemon may still be coming up (another hook just spawned it).
       const deadline = Date.now() + 10_000;
@@ -180,6 +212,12 @@ export class DaemonManager {
 
     const reused = await reuseExisting();
     if (reused) return reused;
+
+    // Before attempting to spawn, check if an external gateway (started by
+    // CodeBuddy, another session, or manually) is already listening on one
+    // of the well-known ports.
+    const discovered = await this.discoverExternalGateway();
+    if (discovered) return discovered;
 
     // O_CREAT|O_EXCL spawn lock — only one concurrent hook actually invokes
     // spawn(). Other hooks block on it and recover the spawned state.
@@ -200,6 +238,10 @@ export class DaemonManager {
       // first reuseExisting and acquireSpawnLock.
       const r = await reuseExisting();
       if (r) return r;
+      // One more discovery attempt inside the lock (gateway may have come
+      // up between our first probe and lock acquisition).
+      const d = await this.discoverExternalGateway();
+      if (d) return d;
       return await this.spawn(ccPid);
     } finally {
       await lock.release();
@@ -294,10 +336,15 @@ export class DaemonManager {
       // fall back to discarding stderr if we can't open the log
     }
 
+    // On Windows, npx / tdai-memory-gateway are .cmd batch files — Node's
+    // spawn() without shell:true calls CreateProcessW which only resolves
+    // .exe extensions. Use shell:true on Windows so .cmd is found via PATHEXT.
+    const isWindows = process.platform === "win32";
     const child: ChildProcess = spawn(command, args, {
       env: childEnv,
       cwd: this.dataDir,
       detached: true,
+      shell: isWindows,
       stdio: ["ignore", logFd, logFd],
     });
     child.unref();

@@ -182,21 +182,23 @@ export class GatewayClient {
   ): Promise<{ status: number; body: string }> {
     return new Promise((resolve, reject) => {
       const bodyStr = bodyObj ? JSON.stringify(bodyObj) : undefined;
+      const headers: Record<string, string> = {};
+      // Only send Authorization when we actually have a token. External
+      // gateways (discovered, not spawned by us) run without token auth.
+      if (this.token) {
+        headers.Authorization = `Bearer ${this.token}`;
+      }
+      if (bodyStr) {
+        headers["Content-Type"] = "application/json";
+        headers["Content-Length"] = Buffer.byteLength(bodyStr).toString();
+      }
       const opts: http.RequestOptions = {
         protocol: this.baseUrl.protocol,
         hostname: this.baseUrl.hostname,
         port: this.baseUrl.port,
         method,
         path,
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-          ...(bodyStr
-            ? {
-                "Content-Type": "application/json",
-                "Content-Length": Buffer.byteLength(bodyStr).toString(),
-              }
-            : {}),
-        },
+        headers,
       };
 
       const req = http.request(opts, (res) => {
