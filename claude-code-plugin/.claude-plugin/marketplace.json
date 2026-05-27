@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "tdai-memory-dev",
+  "description": "TencentDB Agent Memory — long-term memory for Claude Code (development marketplace)",
+  "owner": {
+    "name": "TencentDB Agent Memory",
+    "email": "liguanchen@xiaomi.com"
+  },
+  "plugins": [
+    {
+      "name": "tdai-memory",
+      "description": "Long-term + symbolic short-term memory for Claude Code, powered by TencentDB Agent Memory.",
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/gittyaf/TencentDB-Agent-Memory.git",
+        "path": "claude-code-plugin",
+        "ref": "feat/claude-code-plugin"
+      }
+    }
+  ]
+}

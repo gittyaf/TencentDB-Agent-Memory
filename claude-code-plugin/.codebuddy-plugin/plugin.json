@@ -1,0 +1,12 @@
+{
+  "name": "tdai-memory",
+  "version": "0.1.0",
+  "description": "TencentDB-Agent-Memory plugin for CodeBuddy - long-term memory for AI agents",
+  "author": "Tencent Cloud Database Team",
+  "skills": [
+    "./skills/memory-status",
+    "./skills/memory-search",
+    "./skills/memory-clear-session",
+    "./skills/tdai-memory"
+  ]
+}

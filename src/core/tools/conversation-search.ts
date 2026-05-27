@@ -55,25 +55,48 @@ const TAG = "[memory-tdai][tdai_conversation_search]";
 const RRF_K = 60;
 
 /**
- * Merge multiple ranked lists of `ConversationSearchResultItem` via Reciprocal
- * Rank Fusion. Items appearing in multiple lists get their RRF scores summed.
+ * Weight multiplier for vector (semantic) results in RRF fusion.
+ *
+ * Rationale: FTS keyword matching penalizes semantically-relevant results
+ * that don't share surface tokens with the query (e.g., "What GPU do I have?"
+ * vs "I'm using an Arc A770" — cosine sim 0.76 but zero keyword overlap).
+ * Boosting vector weight ensures semantic-only hits aren't buried by
+ * keyword-matched items that appear in both lists.
+ */
+const RRF_VECTOR_WEIGHT = 2.0;
+
+/**
+ * Merge FTS and vector ranked lists via weighted Reciprocal Rank Fusion.
+ * Vector results receive RRF_VECTOR_WEIGHT multiplier to compensate for
+ * the structural disadvantage of semantic-only matches in hybrid search.
  *
  * Returns items sorted by descending RRF score. The `score` field of each
  * returned item is replaced by the RRF score for consistent ranking semantics.
  */
-function rrfMergeL0(...lists: ConversationSearchResultItem[][]): ConversationSearchResultItem[] {
+function rrfMergeL0(ftsItems: ConversationSearchResultItem[], vecItems: ConversationSearchResultItem[]): ConversationSearchResultItem[] {
   const map = new Map<string, { item: ConversationSearchResultItem; rrfScore: number }>();
 
-  for (const list of lists) {
-    for (let rank = 0; rank < list.length; rank++) {
-      const item = list[rank];
-      const score = 1 / (RRF_K + rank + 1);
-      const existing = map.get(item.id);
-      if (existing) {
-        existing.rrfScore += score;
-      } else {
-        map.set(item.id, { item, rrfScore: score });
-      }
+  // FTS results: weight 1.0
+  for (let rank = 0; rank < ftsItems.length; rank++) {
+    const item = ftsItems[rank];
+    const score = 1 / (RRF_K + rank + 1);
+    const existing = map.get(item.id);
+    if (existing) {
+      existing.rrfScore += score;
+    } else {
+      map.set(item.id, { item, rrfScore: score });
+    }
+  }
+
+  // Vector results: weight RRF_VECTOR_WEIGHT
+  for (let rank = 0; rank < vecItems.length; rank++) {
+    const item = vecItems[rank];
+    const score = (RRF_VECTOR_WEIGHT / (RRF_K + rank + 1));
+    const existing = map.get(item.id);
+    if (existing) {
+      existing.rrfScore += score;
+    } else {
+      map.set(item.id, { item, rrfScore: score });
     }
   }
 
@@ -231,6 +254,24 @@ export async function executeConversationSearch(params: {
     const preFilterCount = results.length;
     results = results.filter((r) => r.session_key === sessionFilter);
     logger?.debug?.(`${TAG} After session filter "${sessionFilter}": ${results.length}/${preFilterCount}`);
+  }
+
+  // ── Deduplicate near-identical content (keeps highest-scored instance) ──
+  {
+    const seen = new Set<string>();
+    const deduped: ConversationSearchResultItem[] = [];
+    for (const r of results) {
+      // Normalize: lowercase, trim, collapse whitespace
+      const key = r.content.toLowerCase().trim().replace(/\s+/g, " ").slice(0, 100);
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(r);
+      }
+    }
+    if (deduped.length < results.length) {
+      logger?.debug?.(`${TAG} Content dedup: ${results.length} → ${deduped.length}`);
+    }
+    results = deduped;
   }
 
   // ── Trim to requested limit ──
