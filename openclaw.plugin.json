@@ -57,7 +57,7 @@
           "everyNConversations": { "type": "number", "default": 5, "description": "每 N 轮对话触发 L1 批处理" },
           "enableWarmup": { "type": "boolean", "default": true, "description": "Warm-up 模式：新 session 从 1 轮触发开始，每次 L1 后翻倍（1→2→4→...→everyN），加速早期记忆提取" },
           "l1IdleTimeoutSeconds": { "type": "number", "default": 600, "description": "L1 空闲超时（秒）：用户停止对话后多久触发 L1 批处理" },
-          "l2DelayAfterL1Seconds": { "type": "number", "default": 90, "description": "L1 完成后延迟多久触发 L2（秒）" },
+          "l2DelayAfterL1Seconds": { "type": "number", "default": 10, "description": "L1 完成后延迟多久触发 L2（秒）" },
           "l2MinIntervalSeconds": { "type": "number", "default": 900, "description": "同一 session 两次 L2 抽取的最小间隔（秒）" },
           "l2MaxIntervalSeconds": { "type": "number", "default": 3600, "description": "同一活跃 session 的 L2 最大轮询间隔（秒）" },
           "sessionActiveWindowHours": { "type": "number", "default": 24, "description": "session 活跃窗口（小时），超过此时间不活跃的 session 停止 L2 轮询" }
@@ -69,6 +69,8 @@
         "properties": {
           "enabled": { "type": "boolean", "default": true, "description": "是否启用自动召回" },
           "maxResults": { "type": "number", "default": 5, "description": "召回最大结果数" },
+          "maxCharsPerMemory": { "type": "number", "default": 0, "description": "单条 L1 记忆注入的最大字符数；填 0 表示不限制" },
+          "maxTotalRecallChars": { "type": "number", "default": 0, "description": "本轮 auto-recall 注入的 L1 记忆总字符预算；填 0 表示不限制" },
           "scoreThreshold": { "type": "number", "default": 0.3, "description": "最低分数阈值" },
           "strategy": { "type": "string", "enum": ["embedding", "keyword", "hybrid"], "default": "hybrid", "description": "搜索策略：keyword(关键词)、embedding(向量)、hybrid(混合RRF融合，推荐)" },
           "timeoutMs": { "type": "number", "default": 5000, "description": "召回整体超时（毫秒），超时后跳过记忆注入并打印警告日志" }

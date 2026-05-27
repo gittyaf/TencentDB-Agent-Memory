@@ -53,12 +53,13 @@
 TencentDB Agent Memory 帮助 Agent 学会你的流程、保留任务上下文、复用历史经验。但我们**拒绝暴力的历史堆砌**，也**抛弃不可逆的暴力摘要**。我们将记忆设计为一套极具层次感的系统，以**符号化记忆**解决单次长任务的信息过载，以**记忆分层**解决跨会话的经验沉淀。
 
 > **让 Agent 记住该记的，让人把注意力留给判断、创造和真正有价值的工作。**
-
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/7cbbb57a-ec81-4f92-b0bd-7f3c5d760c1e" width="200" alt="Agent Memory 微信社群二维码" /><br/>
-  <sub>📱 扫码加入 <b>Agent Memory 微信社群</b>，与早期开发者直接对话
+  <img src="https://github.com/user-attachments/assets/53513290-2c77-45cf-b06f-b07544902bd8" width="360" alt="Agent Memory 微信社群二维码" />
 
----
+  <br/>
+  <sub>📱 扫码加入 <b>Agent Memory 微信社群</b>，与早期开发者直接对话</sub>
+</p>
+
 
 ## 核心技术：拒绝平铺，走向分层与符号化
 
@@ -220,6 +221,9 @@ MODEL_PROVIDER="custom"
 # -e MODEL_*                  将上方配置参数注入容器环境变量
 # -v hermes_data:/opt/data    记忆数据持久化到命名卷（容器重启后数据不丢）
 
+# 进入 Docker 构建目录（已 clone 仓库并位于仓库根目录）
+cd docker/opensource
+
 # 构建
 docker build -f Dockerfile.hermes -t hermes-memory .
 
@@ -259,6 +263,8 @@ docker exec -it hermes-memory hermes
 | `storeBackend` | `"sqlite"` | 存储后端：`sqlite` |
 | `recall.strategy` | `"hybrid"` | 召回策略：`keyword` / `embedding` / `hybrid`（RRF 融合，推荐） |
 | `recall.maxResults` | `5` | 每次召回条数 |
+| `recall.maxCharsPerMemory` | `0` | 单条 L1 记忆注入的最大字符数；`0` 表示不限制 |
+| `recall.maxTotalRecallChars` | `0` | 每轮 auto-recall 注入的 L1 记忆总字符预算；`0` 表示不限制 |
 | `pipeline.everyNConversations` | `5` | 每 N 轮对话触发一次 L1 记忆提取 |
 | `extraction.maxMemoriesPerSession` | `20` | 单次 L1 最多提取多少条 |
 | `persona.triggerEveryN` | `50` | 每 N 条新记忆触发用户画像生成 |
@@ -356,7 +362,8 @@ docker exec -it hermes-memory hermes
 - 💡 **有想法想交流？** 欢迎在 [GitHub Discussions](https://github.com/Tencent/TencentDB-Agent-Memory/discussions) 发起讨论。
 - 🛠️ **想贡献代码？** 请先阅读 [CONTRIBUTING.md](./CONTRIBUTING_CN.md)。
 - 💬 **想加入交流群？** 扫码加入 **Agent Memory 微信社群**，与早期开发者直接对话。
-<img width="200" height="146" alt="766450d8a7b30aa7e67121b4981f1810" src="https://github.com/user-attachments/assets/7cbbb57a-ec81-4f92-b0bd-7f3c5d760c1e" />
+ <p align="center"><img src="https://github.com/user-attachments/assets/53513290-2c77-45cf-b06f-b07544902bd8" width="200" alt="Agent Memory 微信社群二维码" />
+ 
 
 ---
 

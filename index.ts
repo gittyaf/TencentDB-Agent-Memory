@@ -42,6 +42,7 @@ import {
   ensurePluginHookPolicy,
   decideHookPolicy,
 } from "./src/utils/ensure-hook-policy.js";
+import { resolveOpenClawStateDir } from "./src/utils/openclaw-state-dir.js";
 
 const TAG = "[memory-tdai]";
 
@@ -217,7 +218,8 @@ export default function register(api: OpenClawPluginApi) {
   }
 
   // Resolve plugin data directory via runtime API (avoid importing internal paths directly)
-  const pluginDataDir = path.join(api.runtime.state.resolveStateDir(), "memory-tdai");
+  const openclawStateDir = resolveOpenClawStateDir(api.runtime.state);
+  const pluginDataDir = path.join(openclawStateDir, "memory-tdai");
   initDataDirectories(pluginDataDir);
   api.logger.debug?.(`${TAG} Data dir: ${pluginDataDir} (all subdirectories initialized)`);
 
@@ -823,7 +825,7 @@ export default function register(api: OpenClawPluginApi) {
       registerMemoryTdaiCli(memoryTdai, {
         config,
         pluginConfig: api.pluginConfig,
-        stateDir: api.runtime.state.resolveStateDir(),
+        stateDir: openclawStateDir,
         logger: cliLogger,
       });
     },
