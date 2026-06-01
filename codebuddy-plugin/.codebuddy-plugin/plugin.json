@@ -1,0 +1,12 @@
+{
+  "name": "tdai-memory-ide",
+  "version": "0.2.0",
+  "description": "TDAI memory plugin for CodeBuddy IDE — PowerShell-based hook to bypass Electron sandbox subprocess HTTP timeouts. Provides cross-client memory sharing with Claude Code via project-scoped session keys (SHA-256 of cwd).",
+  "author": {
+    "name": "randyyliu"
+  },
+  "homepage": "https://github.com/gittyaf/TencentDB-Agent-Memory",
+  "skills": [
+    "./skills/tdai-memory-search"
+  ]
+}

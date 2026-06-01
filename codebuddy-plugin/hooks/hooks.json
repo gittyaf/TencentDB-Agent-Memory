@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"${CODEBUDDY_PLUGIN_ROOT}/hooks/tdai-hook.ps1\" session-start",
+            "async": true,
+            "timeout": 30,
+            "statusMessage": "Initializing memory..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"${CODEBUDDY_PLUGIN_ROOT}/hooks/tdai-hook.ps1\" user-prompt-submit",
+            "timeout": 5,
+            "statusMessage": "Recalling memories..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"${CODEBUDDY_PLUGIN_ROOT}/hooks/tdai-hook.ps1\" stop",
+            "async": true,
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
