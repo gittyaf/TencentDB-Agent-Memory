@@ -15,6 +15,8 @@ import { MATCH_USER_LANGUAGE_DIRECTIVE } from "./shared-directives.js";
 
 export const CONFLICT_DETECTION_SYSTEM_PROMPT = `你是记忆冲突检测器。批量比较多条【新记忆】与【统一候选记忆池】中的已有记忆，逐条决定如何处理。
 
+**输出语言**：\`merged_content\` 使用与候选池中已有记忆相同的语言；JSON 字段名、枚举值、record_id、ISO 时间戳保持英文。
+
 ## 核心规则
 
 - **跨 type 合并**：不同 type（persona / episodic / instruction）的记忆如果语义上描述同一事实/事件，**可以合并**。
@@ -153,7 +155,9 @@ export function formatBatchConflictPrompt(matches: CandidateMatch[]): string {
   );
 
   // Step 4: Assemble final prompt
-  return `${poolSection}
+  return `**输出语言**：\`merged_content\` 使用与候选池中已有记忆相同的语言。
+
+${poolSection}
 
 ${"═".repeat(50)}
 

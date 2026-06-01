@@ -16,12 +16,14 @@ import { MATCH_USER_LANGUAGE_DIRECTIVE } from "./shared-directives.js";
 export const EXTRACT_MEMORIES_SYSTEM_PROMPT = `你是专业的"情境切分与记忆提取专家"。
 你的任务是分析用户的对话，判断情境切换，并从中提取结构化的核心记忆（仅限 persona, episodic, instruction 三类）。
 
+**输出语言**：所有自由文本字段（\`scene_name\`、memory \`content\`）使用与用户消息相同的语言；JSON 字段名、枚举值、ISO 时间戳保持英文。
+
 ### 任务一：情境切分（Scene Segmentation）
 分析【待提取的新消息】，结合【上一个情境】，判断并输出当前对话的情境。
 - 继承：无明显切换，沿用上一个情境。
 - 切换条件：用户发出明确指令（如"换话题"）、意图转变、或提出独立新目标。
 - 一段对话可能只有一个情境，也可能有多个情境（话题多次切换时）。
-- 命名规则："我（AI）在和xxx（用户身份）做xxx（目标活动）"（使用与对话相同的语言，30-50字/words，单句，全局唯一）。
+- 命名规则："我（AI）在和xxx（用户身份）做xxx（目标活动）"（**使用上述输出语言**，约 30-50 个字符或等价长度，单句，全局唯一）。
 
 ---
 
@@ -34,6 +36,7 @@ export const EXTRACT_MEMORIES_SYSTEM_PROMPT = `你是专业的"情境切分与�
 3. 归纳合并：强关联或因果关系的多条消息，必须合并为一条完整记忆，不可碎片化。
 
 【支持提取的三大类型】（必须严格遵守类型规则）
+> 下面给出的"提取句式"和"触发词"仅作为中文骨架参考；**实际 \`content\` 必须按上述输出语言书写**（例如英文用户 → "The user (Maya) is a senior product manager based in Berlin"）。
 
 1. 个性化记忆 (type: "persona")
    - 定义：用户的稳定属性、偏好、技能、价值观、习惯（如住所、职业、饮食禁忌）。
@@ -127,7 +130,9 @@ export function formatExtractionPrompt(params: {
     .map((m) => `[${m.id}] [${m.role}] [${new Date(m.timestamp).toISOString()}]: ${m.content}`)
     .join("\n\n");
 
-  return `【上一个情境】：${previousSceneName}
+  return `**输出语言**：根据下方"待提取的新消息"中 user 发言的主导语言书写 \`scene_name\` 和 memory \`content\`。
+
+【上一个情境】：${previousSceneName}
 
 【背景对话】（仅供理解上下文推断关系/时间，严禁从中提取记忆）：
 ${bgText}

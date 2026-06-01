@@ -129,6 +129,29 @@ function sweepStaleCaches(): void {
 }
 
 export default function register(api: OpenClawPluginApi) {
+  // ─── CLI metadata mode: register CLI commands only, skip all runtime init ───
+  // In this mode, runtime is `{} as PluginRuntime` (empty object).
+  // OpenClaw calls this to discover CLI subcommands without starting the full plugin.
+  if (api.registrationMode === "cli-metadata") {
+    api.registerCli(
+      ({ program, config, logger: cliLogger }) => {
+        const memoryTdai = program
+          .command("memory-tdai")
+          .description("memory-tdai plugin commands (seed, query, stats)");
+
+        registerMemoryTdaiCli(memoryTdai, {
+          config,
+          pluginConfig: api.pluginConfig,
+          stateDir: resolveOpenClawStateDir((api.runtime as any)?.state),
+          logger: cliLogger,
+        });
+      },
+      { commands: ["memory-tdai"] },
+    );
+    return;
+  }
+
+  // ─── Full / discovery mode: complete runtime initialization ───
   pluginStartTimestamp = Date.now();
   setPreferredEmbeddedAgentRuntime(api.runtime.agent);
   // Reset reporter singleton so config changes take effect on hot-reload.
@@ -218,7 +241,7 @@ export default function register(api: OpenClawPluginApi) {
   }
 
   // Resolve plugin data directory via runtime API (avoid importing internal paths directly)
-  const openclawStateDir = resolveOpenClawStateDir(api.runtime.state);
+  const openclawStateDir = resolveOpenClawStateDir((api.runtime as any)?.state);
   const pluginDataDir = path.join(openclawStateDir, "memory-tdai");
   initDataDirectories(pluginDataDir);
   api.logger.debug?.(`${TAG} Data dir: ${pluginDataDir} (all subdirectories initialized)`);

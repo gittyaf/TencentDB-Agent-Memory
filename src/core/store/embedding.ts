@@ -13,6 +13,8 @@
  * - Throws on failure; callers decide fallback strategy.
  */
 
+import type { Logger } from "../types.js";
+
 // ============================
 // Types
 // ============================
@@ -28,6 +30,13 @@ export interface OpenAIEmbeddingConfig {
   model: string;
   /** Output dimensions (required — must match the chosen model) */
   dimensions: number;
+  /**
+   * Whether to include the `dimensions` field in the embeddings request body.
+   * Defaults to `true` for backward compatibility with OpenAI's `text-embedding-3-*`
+   * (Matryoshka representation). Some self-hosted / OSS models (e.g. BGE-M3) reject
+   * unknown `dimensions` parameters with HTTP 400; set this to `false` for those.
+   */
+  sendDimensions?: boolean;
   /** Local proxy URL (only for provider="qclaw") — requests are forwarded through this proxy with Remote-URL header */
   proxyUrl?: string;
   /** Max input text length in characters before truncation (default: 5000). */
@@ -95,17 +104,6 @@ export class EmbeddingNotReadyError extends Error {
     super(message ?? "Local embedding model is not ready yet (still downloading or loading)");
     this.name = "EmbeddingNotReadyError";
   }
-}
-
-// ============================
-// Logger interface
-// ============================
-
-interface Logger {
-  debug?: (message: string) => void;
-  info: (message: string) => void;
-  warn: (message: string) => void;
-  error: (message: string) => void;
 }
 
 const TAG = "[memory-tdai][embedding]";
@@ -406,6 +404,7 @@ export class OpenAIEmbeddingService implements EmbeddingService {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly dims: number;
+  private readonly sendDimensions: boolean;
   private readonly providerName: string;
   private readonly proxyUrl?: string;
   private readonly maxInputChars?: number;
@@ -429,6 +428,7 @@ export class OpenAIEmbeddingService implements EmbeddingService {
     this.apiKey = config.apiKey;
     this.model = config.model;
     this.dims = config.dimensions;
+    this.sendDimensions = config.sendDimensions ?? true;
     this.providerName = config.provider || "openai";
     this.proxyUrl = config.proxyUrl?.trim() || undefined;
     this.maxInputChars = config.maxInputChars && config.maxInputChars > 0 ? config.maxInputChars : undefined;
@@ -497,8 +497,10 @@ export class OpenAIEmbeddingService implements EmbeddingService {
     const body: Record<string, unknown> = {
       input: texts,
       model: this.model,
-      dimensions: this.dims,
     };
+    if (this.sendDimensions) {
+      body.dimensions = this.dims;
+    }
 
     // Determine fetch URL and headers based on proxy mode
     const useProxy = this.providerName === "qclaw" && !!this.proxyUrl;

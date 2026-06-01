@@ -106,6 +106,13 @@ export interface EmbeddingConfig {
   model: string;
   /** Vector dimensions (required for remote provider, must match model). */
   dimensions: number;
+  /**
+   * Whether to send the `dimensions` field in the embeddings request body.
+   * Default true (compatible with OpenAI text-embedding-3-* Matryoshka models).
+   * Set to false for self-hosted / OSS models that reject unknown `dimensions`
+   * (e.g. BGE-M3, which returns HTTP 400 "does not support matryoshka representation").
+   */
+  sendDimensions: boolean;
   /** Top-K candidates to recall during conflict detection (default: 5) */
   conflictRecallTopK: number;
   /** Proxy URL for qclaw provider — when provider="qclaw", requests are forwarded through this local proxy */
@@ -206,9 +213,11 @@ export interface OffloadConfig {
    * LLM execution mode for L1/L1.5/L2 tasks.
    * - "local": call LLM directly via AI SDK (uses offload.model or main agent model)
    * - "backend": route through remote backend service (requires backendUrl)
+   * - "collect": data collection only — runs L1/L1.5/L2 asynchronously but disables
+   *   L3 compression and does NOT occupy the contextEngine slot (uses legacy compaction)
    * Default: "local" (auto-detects based on backendUrl presence for backward compat)
    */
-  mode: "local" | "backend";
+  mode: "local" | "backend" | "collect";
   /** LLM model for offload tasks, format: "provider/model-id". Falls back to agents.defaults.model when omitted. */
   model?: string;
   /** LLM temperature (default: 0.2) */
@@ -430,9 +439,9 @@ export function parseConfig(raw: Record<string, unknown> | undefined): MemoryTda
   // --- Offload ---
   const offloadGroup = obj(c, "offload");
 
-  const offloadMode: "local" | "backend" = (() => {
+  const offloadMode: "local" | "backend" | "collect" = (() => {
     const raw = optStr(offloadGroup, "mode");
-    if (raw === "local" || raw === "backend") return raw;
+    if (raw === "local" || raw === "backend" || raw === "collect") return raw;
     return optStr(offloadGroup, "backendUrl") ? "backend" : "local";
   })();
 
@@ -503,6 +512,7 @@ export function parseConfig(raw: Record<string, unknown> | undefined): MemoryTda
       apiKey: embeddingApiKey,
       model: str(embeddingGroup, "model") ?? defaultModel,
       dimensions: num(embeddingGroup, "dimensions") ?? defaultDimensions,
+      sendDimensions: bool(embeddingGroup, "sendDimensions") ?? true,
       conflictRecallTopK: num(embeddingGroup, "conflictRecallTopK") ?? 5,
       proxyUrl: embeddingProxyUrl,
       maxInputChars: num(embeddingGroup, "maxInputChars") ?? 5000,

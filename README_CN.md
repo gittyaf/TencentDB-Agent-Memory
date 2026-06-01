@@ -251,6 +251,44 @@ docker exec -it hermes-memory hermes
 
 ---
 
+## 🔒 Gateway 安全配置（可选）
+
+Hermes Gateway 监听 `:8420`，对外提供 capture / search / recall 的 HTTP 接口。新增两个开关，可以把它从“开放的本地 sidecar”切换为“需要鉴权的网络服务”。**两个开关默认都关闭，已有部署的行为不变。**
+
+| 字段 | env | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `server.apiKey` | `TDAI_GATEWAY_API_KEY` | _(未设置)_ | 设置后，除 `GET /health` 外的所有接口都要求 `Authorization: Bearer <apiKey>`；缺失或错误的 token 返回 HTTP 401。Token 比较使用常量时间算法，避免时序侧信道。 |
+| `server.corsOrigins` | `TDAI_CORS_ORIGINS`（逗号分隔） | `[]` | CORS 白名单。空列表表示**不发送**任何 `Access-Control-Allow-*` 响应头，浏览器同源策略会自动阻止跨域请求。`["*"]` 仅供本地开发，不要用于生产。 |
+
+当 `apiKey` 未设置时，Gateway 启动时会打印一条 `WARN`；如果同时还绑定在非 loopback 地址（例如 `0.0.0.0`），还会再打印一条更醒目的告警。
+
+客户端在启用鉴权后用 Bearer token 调用：
+
+```bash
+curl -H "Authorization: Bearer $TDAI_GATEWAY_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"query":"...","session_key":"..."}' \
+     http://127.0.0.1:8420/recall
+```
+
+`GET /health` 永远无需 token，方便 `docker healthcheck` / `kubectl liveness` 等编排探针继续工作。
+
+### Hermes 插件侧的配置
+
+Hermes `memory_tencentdb` 插件本身是 Gateway 的**客户端**。当 Gateway 开启了鉴权后，在 Hermes 进程上设置：
+
+```bash
+export MEMORY_TENCENTDB_GATEWAY_API_KEY="<与 Gateway 同一份密钥>"
+```
+
+插件随后会在每一次发往 Gateway 的请求上附带 `Authorization: Bearer <key>`。该变量未设置时，插件不发送任何鉴权头，与 Gateway 维持开放模式的旧行为完全匹配——已有部署 0 影响。
+
+需要明确的边界：**插件只负责 client 一侧**。Gateway 是否真的强制鉴权由 Gateway 端自己的 `TDAI_GATEWAY_API_KEY` / `server.apiKey` 决定。两端要使用相同的密钥才能匹配；插件不会把这个值传递给 Gateway——因为 Gateway 可能由 Docker、systemd 或其它独立机制拉起，插件没有也不应该去管这个。
+
+若 `MEMORY_TENCENTDB_GATEWAY_API_KEY` 没设置，插件还会回退读取 `TDAI_GATEWAY_API_KEY`，方便两个进程共享同一个 env 文件、只设一个变量名的场景。Gateway 永远不会读 `MEMORY_TENCENTDB_GATEWAY_API_KEY`，那是插件侧专用名字。
+
+---
+
 ## 🔧 可调参数
 
 **所有字段均有合理默认值，零配置即可跑。** 如果要调优，可以按使用深度逐层展开。
@@ -297,6 +335,20 @@ docker exec -it hermes-memory hermes
 完整字段、类型、约束见 [`openclaw.plugin.json`](./openclaw.plugin.json) 。
 
 - `embedding.*` — 远程 embedding 服务（OpenAI 兼容 API）
+  - `embedding.sendDimensions`（默认 `true`）：是否在请求体中携带 `dimensions` 字段。OpenAI `text-embedding-3-*` 系列依赖该字段做 Matryoshka 维度截断；但部分自托管 / 开源模型（如 **BGE-M3**）不支持自定义维度，会以 HTTP 400 报 `does not support matryoshka representation` 拒绝请求。此时请显式设为 `false`，例如：
+    ```json
+    {
+      "embedding": {
+        "enabled": true,
+        "provider": "openai",
+        "baseUrl": "http://your-host:your-port/v1",
+        "apiKey": "<KEY>",
+        "model": "bge-m3",
+        "dimensions": 1024,
+        "sendDimensions": false
+      }
+    }
+    ```
 - `llm.*` — 独立 LLM 模式（绕过 OpenClaw 内置模型，用指定 API 跑 L1/L2/L3）
 - `offload.backendUrl / backendApiKey` — 将 L1/L1.5/L2/L4 offload 流程卸载到后端服务
 - `report.*` — 指标上报
