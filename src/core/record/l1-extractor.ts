@@ -463,6 +463,32 @@ async function applyDecisions(params: {
     }
   }
 
+  // Janitor marker: append a pruning-log entry recording what dedup actually did.
+  // This is the watchdog for hy3 actually running cleanup vs silently skipping.
+  try {
+    const counts = { store: 0, skip: 0, update: 0, merge: 0, other: 0 };
+    for (const d of decisions) {
+      const k = d.action as keyof typeof counts;
+      if (k in counts) counts[k]++;
+      else counts.other++;
+    }
+    const marker = {
+      ts: new Date().toISOString(),
+      session_key: sessionKey,
+      input_memories: memoriesWithIds.length,
+      decisions_total: decisions.length,
+      actions: counts,
+      stored: storedRecords.length,
+      pruned: counts.skip + counts.update + counts.merge,
+    };
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const logPath = path.join(baseDir, "records", "pruning-log.jsonl");
+    await fs.appendFile(logPath, JSON.stringify(marker) + "\n", "utf-8");
+  } catch (err) {
+    logger?.debug?.(`${TAG} Pruning-log write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   return storedRecords;
 }
 
